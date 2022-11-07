@@ -610,8 +610,8 @@ void adjust_param_shapes(module& m, const std::vector<instruction_ref>& inputs)
         const auto& name  = names[i];
         const auto& input = inputs[i]->get_shape();
         auto param        = m.get_parameter(name);
-        if(input.standard())
-            continue;
+        // if(input.standard())
+        //     continue;
         auto lens    = input.lens();
         auto strides = input.strides();
         std::vector<operation> ops;
@@ -623,18 +623,23 @@ void adjust_param_shapes(module& m, const std::vector<instruction_ref>& inputs)
             strides    = reorder_dims(strides, iperm);
             ops.push_back(make_op("transpose", {{"permutation", perm}}));
         }
-        if(input.broadcasted())
-        {
-            std::transform(lens.begin(),
-                           lens.end(),
-                           strides.begin(),
-                           lens.begin(),
-                           [](auto len, auto stride) -> std::size_t {
-                               if(stride == 0)
-                                   return 1;
-                               return len;
-                           });
-            ops.push_back(make_op("multibroadcast", {{"out_lens", input.lens()}}));
+        // if(input.broadcasted())
+        // {
+        //     std::transform(lens.begin(),
+        //                    lens.end(),
+        //                    strides.begin(),
+        //                    lens.begin(),
+        //                    [](auto len, auto stride) -> std::size_t {
+        //                        if(stride == 0)
+        //                            return 1;
+        //                        return len;
+        //                    });
+        //     ops.push_back(make_op("multibroadcast", {{"out_lens", input.lens()}}));
+        // }
+        if (name == "x1"){
+            // ops.push_back(make_op("reshape", {{"dims", {1, 64, 1, 1} }}));
+            // ops.push_back(make_op("multibroadcast", {{"out_lens", {1, 64, 112, 112}}}));
+            ops.push_back(make_op("broadcast", {{"axis", 1}, {"out_lens", {1, 64, 112, 112}  }}));
         }
         auto new_param =
             std::accumulate(ops.begin(),
