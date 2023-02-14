@@ -158,20 +158,27 @@ struct miopen_apply
     void apply()
     {
         init();
+        std::cout << "MANUPA:mod:" << *mod << std::endl;
         for(auto it = mod->begin(); it != mod->end(); it++)
         {
+            std::cout << "MANUPA:ins:" << it->name() << std::endl;
             auto s     = it->get_shape();
             auto attrs = it->get_operator().attributes();
             if(apply_map.count(it->name()) > 0)
             {
+                std::cout << "MANUPA:1" << std::endl;
                 check_shape(s, apply_map.at(it->name())(it));
             }
             else if(has_compiler_for(it->name()))
             {
-                check_shape(s, insert_precompile_op(it));
+                std::cout << "MANUPA:2" << std::endl;
+                auto precompile_op = insert_precompile_op(it);
+                std::cout << "MANUPA:mod:" << *mod << std::endl;
+                check_shape(s, precompile_op);
             }
             else if(attrs.contains("target"))
             {
+                std::cout << "MANUPA:3" << std::endl;
                 check_shape(s, insert_custom_op(it, attrs));
             }
         }
@@ -204,6 +211,10 @@ struct miopen_apply
     instruction_ref insert_precompile_op(instruction_ref ins) const
     {
         auto output                       = insert_allocation(ins, ins->get_shape());
+        if(ins->name() == "gpu::mlir_gemm_like_reduce_sum"){
+            output = mod->insert_instruction(ins, make_op("hip::memset"), output);
+        }
+
         std::vector<instruction_ref> refs = ins->inputs();
         refs.push_back(output);
 

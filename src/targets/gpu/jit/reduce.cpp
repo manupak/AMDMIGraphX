@@ -151,6 +151,9 @@ struct reduce_compiler : compiler<reduce_compiler>
                                        {"transformers", make_transformer_args(vec)},
                                        {"preamble", v.get("preamble", std::string{})}});
         options.params += "-Wno-float-equal";
+        std::cout << "------ KERNEL CODE ------" << std::endl;
+        std::cout << src << std::endl;
+        std::cout << "-------------------------" << std::endl;
         return compile_hip_code_object(src, options);
     }
 

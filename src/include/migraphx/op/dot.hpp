@@ -36,6 +36,14 @@ namespace op {
 
 struct dot
 {
+    std::string perf_config = "";
+
+    template <class Self, class F>
+    static auto reflect(Self& self, F f)
+    {
+        return pack(f(self.perf_config, "perf_config"));
+    }
+
     std::string name() const { return "dot"; }
     shape compute_shape(std::vector<shape> inputs) const
     {

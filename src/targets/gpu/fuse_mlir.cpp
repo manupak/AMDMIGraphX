@@ -60,6 +60,32 @@ struct mlir_conv
 };
 MIGRAPHX_REGISTER_OP(mlir_conv);
 
+struct mlir_gemm_like_reduce_sum
+{
+    operation op = make_op("convolution");
+    operation reduce_op = make_op("reduce_sum");
+
+    template <class Self, class F>
+    static auto reflect(Self& self, F f)
+    {
+        return pack(f(self.op, "op"), f(self.reduce_op, "reduce_op"));
+    }
+
+    std::string name() const { return "gpu::mlir_gemm_like_reduce_sum"; }
+    shape compute_shape(std::vector<shape> inputs, const std::vector<module_ref>& mods) const
+    {
+        check_shapes{inputs, *this}.packed_or_broadcasted();
+        if(mods.size() != 1)
+            MIGRAPHX_THROW("should have one submodule.");
+        if(inputs.size() < 2)
+            MIGRAPHX_THROW("should have at least two inputs.");
+        auto n = inputs.size();
+        auto opShape = op.compute_shape({inputs[n - 2], inputs[n - 1]});
+        return reduce_op.compute_shape({opShape});
+    }
+};
+MIGRAPHX_REGISTER_OP(mlir_gemm_like_reduce_sum);
+
 namespace {
 
 MIGRAPHX_PRED_MATCHER(is_mlir_conv, instruction_ref ins)
@@ -134,6 +160,7 @@ struct find_conv_pointwise
         inputs.insert(inputs.end(), conv_ins->inputs().begin(), conv_ins->inputs().end());
         mpm.get_module().replace_instruction(
             ins, mlir_conv{conv_ins->get_operator()}, inputs, {mm});
+        std::cout << "MANUPA::mpm : " << mpm.get_module() << std::endl;
     }
 };
 
@@ -202,6 +229,7 @@ struct find_gemm_pointwise
         inputs.insert(inputs.end(), gemm_ins->inputs().begin(), gemm_ins->inputs().end());
         mpm.get_module().replace_instruction(
             ins, mlir_conv{gemm_ins->get_operator()}, inputs, {mm});
+        std::cout << "MANUPA::mpm : " << mpm.get_module() << std::endl;
     }
 };
 
@@ -267,7 +295,8 @@ struct find_gemm_pointwise_reduce_sum
                      [&](auto input) { return input != gemm_ins; });
         inputs.insert(inputs.end(), gemm_ins->inputs().begin(), gemm_ins->inputs().end());
         mpm.get_module().replace_instruction(
-            reduce_sum_ins, mlir_conv{gemm_ins->get_operator()}, inputs, {mm});
+            reduce_sum_ins, mlir_gemm_like_reduce_sum{gemm_ins->get_operator(), reduce_sum_ins->get_operator()}, inputs, {mm});
+        std::cout << "MANUPA::mpm : " << mpm.get_module() << std::endl;
     }
 };
 
@@ -279,6 +308,7 @@ void fuse_mlir::apply(module_pass_manager& mpm) const
 {
 #ifdef MIGRAPHX_MLIR
     match::find_matches(mpm, find_conv_pointwise{});
+    // match::find_matches(mpm, find_gemm_pointwise{});
     match::find_matches(mpm, find_gemm_pointwise_reduce_sum{});
 #else
     (void)mpm;

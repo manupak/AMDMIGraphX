@@ -382,6 +382,12 @@ std::vector<argument> generic_eval(const module* mod,
         assert(results.find(ins) != results.end());
         if(not ins->get_shape().dynamic())
         {
+            if(results.at(ins).get_shape() != ins->get_shape()){
+                std::cout << *mod << "\n";
+                std::cout << "MANUPA:results.at(ins).get_shape()=" << results.at(ins).get_shape() << "\n";
+                std::cout << "MANUPA:ins->get_shape()=" << ins->get_shape() << "\n";
+                std::cout << "MANUPA:ins name" << ins->name() << std::endl;
+            }
             assert(results.at(ins).get_shape() == ins->get_shape());
         }
     }

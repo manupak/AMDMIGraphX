@@ -43,6 +43,7 @@ MIGRAPHX_REGISTER_OP(hip_copy_from_gpu)
 MIGRAPHX_REGISTER_OP(hip_copy)
 MIGRAPHX_REGISTER_OP(hip_allocate_memory)
 MIGRAPHX_REGISTER_OP(hip_copy_literal)
+MIGRAPHX_REGISTER_OP(hip_memset)
 
 using hip_ptr      = MIGRAPHX_MANAGE_PTR(void, hipFree);
 using hip_host_ptr = MIGRAPHX_MANAGE_PTR(void, hipHostUnregister);
@@ -239,6 +240,12 @@ void hip_async_copy(context& ctx, const argument& src, const argument& dst, hipM
     auto status = hipMemcpyAsync(dst.data(), src.data(), src_size, kind, ctx.get_stream().get());
     if(status != hipSuccess)
         MIGRAPHX_THROW("Gpu copy failed: " + hip_error(status));
+}
+
+void hip_memset_(context& ctx, const argument& data, int value){
+    auto status = hipMemsetD32Async(data.data(), value, data.get_shape().bytes() / 4, ctx.get_stream().get());
+    if(status != hipSuccess)
+        MIGRAPHX_THROW("memset failed!");
 }
 
 void gpu_copy(context& ctx, const argument& src, const argument& dst)

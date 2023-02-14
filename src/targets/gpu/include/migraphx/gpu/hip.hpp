@@ -56,6 +56,8 @@ void gpu_copy(context& ctx, const argument& src, const argument& dst);
 void copy_to_gpu(context& ctx, const argument& src, const argument& dst);
 void copy_from_gpu(context& ctx, const argument& src, const argument& dst);
 
+void hip_memset_(context& ctx, const argument& data, int value);
+
 argument get_preallocation(context& ctx, const std::string& id);
 
 struct hip_allocate
@@ -97,6 +99,23 @@ struct hip_sync_stream
         if(args.empty())
             return {};
         return args.front();
+    }
+};
+
+struct hip_memset
+{
+    std::string name() const { return "hip::memset"; }
+    shape compute_shape(const std::vector<shape>& inputs) const
+    {
+        if(inputs.empty())
+            return {};
+        return inputs.front();
+    }
+
+    argument compute(context& ctx, const shape&, const std::vector<argument>& args) const
+    {
+        hip_memset_(ctx, args[0], 0);
+        return args[0];
     }
 };
 

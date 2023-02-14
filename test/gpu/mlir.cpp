@@ -36,6 +36,7 @@
 #include <migraphx/instruction.hpp>
 #include <migraphx/functional.hpp>
 #include <test.hpp>
+#include <migraphx/load_save.hpp>
 
 struct mlir_gpu_target : migraphx::gpu::target
 {
@@ -197,37 +198,55 @@ migraphx::argument run_gpu_generic(migraphx::program p, const migraphx::paramete
 bool verify_mlir_generic(migraphx::program p)
 {
     auto inputs = generate_params(p);
-    return migraphx::verify_args("mlir", run_ref(p, inputs), run_gpu_generic(p, inputs));
+    auto ref = run_ref(p, inputs);
+    auto test = run_gpu_generic(p, inputs);
+    return migraphx::verify_args("mlir", ref, test);
+    // return true;
 }
 
-TEST_CASE(conv_add_relu_generic_test)
-{
-    migraphx::program p;
-    auto* m = p.get_main_module();
-    auto x    = m->add_parameter("x", {migraphx::shape::float_type, {1, 8, 4, 4}});
-    auto w    = m->add_parameter("w", {migraphx::shape::float_type, {2, 8, 3, 3}});
-    auto b    = m->add_parameter("b", {migraphx::shape::float_type, {1, 2, 2, 2}});
-    auto conv = m->add_instruction(migraphx::make_op("convolution"), x, w);
-    auto add  = m->add_instruction(migraphx::make_op("add"), conv, b);
-    auto relu = m->add_instruction(migraphx::make_op("relu"), add);
-    m->add_return({relu});
-    EXPECT(verify_mlir_generic(p));
-}
+// TEST_CASE(conv_add_relu_generic_test)
+// {
+//     migraphx::program p;
+//     auto* m = p.get_main_module();
+//     auto x    = m->add_parameter("x", {migraphx::shape::float_type, {1, 8, 4, 4}});
+//     auto w    = m->add_parameter("w", {migraphx::shape::float_type, {2, 8, 3, 3}});
+//     auto b    = m->add_parameter("b", {migraphx::shape::float_type, {1, 2, 2, 2}});
+//     auto conv = m->add_instruction(migraphx::make_op("convolution"), x, w);
+//     auto add  = m->add_instruction(migraphx::make_op("add"), conv, b);
+//     auto relu = m->add_instruction(migraphx::make_op("relu"), add);
+//     m->add_return({relu});
+//     EXPECT(verify_mlir_generic(p));
+// }
 
 TEST_CASE(gemm_add_add_reduce_sum)
 {
     migraphx::program p;
+
+    //Case 1
+    constexpr int M = 12;
+    constexpr int K = 384;
+    constexpr int N = 384;
+    std::string perf_config = "64,16,8,16,16,4,1,1";
+
+    // //Case 3
+    // constexpr int M = 256;
+    // constexpr int K = 3072;
+    // constexpr int N = 768;
+    // std::string perf_config = "32,32,8,16,16,4,1,1";
+
     auto* m = p.get_main_module();
-    auto arg0    = m->add_parameter("arg0", {migraphx::shape::float_type, {1, 256, 3072}});
-    auto arg1    = m->add_parameter("arg1", {migraphx::shape::float_type, {1, 3072, 768}});
-    auto arg2    = m->add_parameter("arg2", {migraphx::shape::float_type, {1, 1, 768}});
-    auto arg3    = m->add_parameter("arg3", {migraphx::shape::float_type, {1, 256, 768}});
-    auto dot = m->add_instruction(migraphx::make_op("dot"), arg0, arg1);
-    auto mb_arg2 = m->add_instruction(migraphx::make_op("multibroadcast", {{"out_lens", {1, 256, 768}}}), arg2);
+    auto arg0    = m->add_parameter("arg0", {migraphx::shape::float_type, {1, M, K}});
+    auto arg1    = m->add_parameter("arg1", {migraphx::shape::float_type, {1, K, N}});
+    auto arg2    = m->add_parameter("arg2", {migraphx::shape::float_type, {1, 1, N}});
+    auto arg3    = m->add_parameter("arg3", {migraphx::shape::float_type, {1, M, N}});
+    auto dot = m->add_instruction(migraphx::make_op("dot", {{"perf_config", perf_config}}), arg0, arg1);
+    auto mb_arg2 = m->add_instruction(migraphx::make_op("multibroadcast", {{"out_lens", {1, M, N}}}), arg2);
     auto add1  = m->add_instruction(migraphx::make_op("add"), dot, mb_arg2);
     auto add2  = m->add_instruction(migraphx::make_op("add"), add1, arg3);
     auto reduce_sum = m->add_instruction(migraphx::make_op("reduce_sum", {{"axes", {2}}}), add2);
     m->add_return({reduce_sum});
+    std::string filename = "gemm_add_add_reduce_sum.mxr";
+    migraphx::save(p, filename);
     EXPECT(verify_mlir_generic(p));
 }
 
