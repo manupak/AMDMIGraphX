@@ -88,7 +88,7 @@ struct mlir_op
             std::transform(ins->inputs().begin(),
                            ins->inputs().end(),
                            input_shapes.begin(),
-                           [&](auto in) { return ins_shapes[in]; });
+                           [&](auto in) {return ins_shapes[in];});
             ins_shapes[ins] = ins->get_operator().compute_shape(input_shapes);
         }
         MIGRAPHX_THROW("No return found in the submodule");
@@ -112,34 +112,8 @@ MIGRAPHX_PRED_MATCHER(is_mlir_conv, instruction_ref ins)
     return true;
 }
 
-struct find_mlir_op
+struct find_mlir_op_base
 {
-    auto matcher() const
-    {
-        auto dot_or_conv = match::skip(match::name("contiguous"))(
-            match::any_of(match::name("dot"), is_mlir_conv()).bind("gemm_based_op"));
-        return match::name("pointwise")(match::any_of[match::inputs()](dot_or_conv.bind("x")));
-    }
-
-    std::unordered_map<instruction_ref, instruction_ref>
-    create_param_map_with_literals(module_ref mm, const module* pm, const shape& shape) const
-    {
-        std::unordered_map<instruction_ref, instruction_ref> ins_map;
-        for(auto ins : iterator_for(*pm))
-        {
-            if(ins->name() != "@literal")
-            {
-                continue;
-            }
-            literal r               = ins->get_literal();
-            instruction_ref literal = mm->add_literal(r);
-            instruction_ref mbcast  = mm->add_instruction(
-                make_op("multibroadcast", {{"out_lens", shape.lens()}}), literal);
-            ins_map[ins] = mbcast;
-        }
-        return ins_map;
-    }
-
     std::tuple<instruction_ref, std::vector<instruction_ref>>
     fuse_input_ops_and_gemm_based_op(module_ref mm, instruction_ref gemm_based_op) const
     {
@@ -167,6 +141,62 @@ struct find_mlir_op
             mm->add_instruction(gemm_based_op->get_operator(), imm_inputs);
         return {new_gemm_based_op, top_inputs};
     }
+};
+
+struct find_mlir_dot_standalone : public find_mlir_op_base
+{
+
+    auto matcher() const
+    {
+        return match::name("dot");
+    }
+
+    void apply(module_pass_manager& mpm, const match::matcher_result& r) const
+    {
+        auto gemm_based_op           = r.result;
+        // Only fuse with fp32/fp16
+        if(std::any_of(gemm_based_op->inputs().begin(), gemm_based_op->inputs().end(), [&](auto i) {
+               return not contains({shape::type_t::float_type, shape::type_t::half_type},
+                                   i->get_shape().type());
+           }))
+            return;
+        static size_t counter = 0; 
+        module_ref mm = mpm.create_module("mlir_" + std::to_string(counter++));
+        mm->set_bypass();
+        auto [anchor_op, top_inputs] = fuse_input_ops_and_gemm_based_op(mm, gemm_based_op);
+        mm->add_return({anchor_op});
+        mpm.get_module().replace_instruction(
+            gemm_based_op, mlir_op{gemm_based_op->get_operator()}, top_inputs, {mm});
+    }
+};
+
+struct find_mlir_op : public find_mlir_op_base
+{
+    auto matcher() const
+    {
+        auto dot_or_conv = match::skip(match::name("contiguous"))(
+            match::any_of(match::name("dot"), is_mlir_conv()).bind("gemm_based_op"));
+        return match::name("pointwise")(match::any_of[match::inputs()](dot_or_conv.bind("x")));
+    }
+
+    std::unordered_map<instruction_ref, instruction_ref>
+    create_param_map_with_literals(module_ref mm, const module* pm, const shape& shape) const
+    {
+        std::unordered_map<instruction_ref, instruction_ref> ins_map;
+        for(auto ins : iterator_for(*pm))
+        {
+            if(ins->name() != "@literal")
+            {
+                continue;
+            }
+            literal r               = ins->get_literal();
+            instruction_ref literal = mm->add_literal(r);
+            instruction_ref mbcast  = mm->add_instruction(
+                make_op("multibroadcast", {{"out_lens", shape.lens()}}), literal);
+            ins_map[ins] = mbcast;
+        }
+        return ins_map;
+    }
 
     void apply(module_pass_manager& mpm, const match::matcher_result& r) const
     {
@@ -178,7 +208,7 @@ struct find_mlir_op
         // Whitelist pointwise operators
         if(std::any_of(pm->begin(), pm->end(), [](const auto& i) {
                return not contains(
-                   {"@literal", "@param", "@return", "convolution", "dot", "add", "relu", "mul"},
+                   {"@literal", "@param", "@return", "convolution", "dot", "add", "relu", "mul", "erf"},
                    i.name());
            }))
             return;
@@ -228,6 +258,7 @@ void fuse_mlir::apply(module_pass_manager& mpm) const
     if(mlir_enabled)
     {
         match::find_matches(mpm, find_mlir_op{});
+        // match::find_matches(mpm, find_mlir_dot_standalone{});
     }
     else
     {

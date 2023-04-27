@@ -486,6 +486,10 @@ struct mlir_program
         {
             return "tosa.const";
         }
+        // if(ins->name() == "erf")
+        // {
+        //     return "migraphx.relu";
+        // }
         return "migraphx." + ins->name();
     }
 
@@ -590,6 +594,7 @@ struct mlir_program
 
         // 2nd pipeline to call
         get_module_tuned();
+        // mlirPassManagerEnableIRPrinting(pm_back.get());
         mlirMIGraphXAddBackendPipeline(pm_back.get(), target_arch.c_str());
         mlirPassManagerRun(pm_back.get(), mmodule.get());
 
